@@ -1,0 +1,4 @@
+FROM caddy:2-alpine
+ARG PPP=123
+COPY caddy2.8/index.html /usr/share/caddy/index.html
+

@@ -1,0 +1,5 @@
+services:
+  mongo:
+    image: mongo:8
+    volumes:
+      - mongo_test_data:/data/db

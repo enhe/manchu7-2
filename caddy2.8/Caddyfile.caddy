@@ -1,0 +1,34 @@
+{
+    # 全局选项
+    email your_email@example.com
+}
+
+# mongodb 应用
+localhost {
+    handle /api/* {
+        reverse_proxy monggo:27017
+    }
+
+    # RustFS 控制台
+    handle /storage/* {
+        uri strip_prefix /storage
+        reverse_proxy rustfs:9001
+    }
+
+    # RustFS API
+    handle /s3/* {
+        uri strip_prefix /s3
+        reverse_proxy rustfs:9000
+    }
+
+    # valkey9（仅开发环境开放）
+    handle /db/* {
+        uri strip_prefix /db
+        reverse_proxy surrealdb:6379
+    }
+
+    # 默认走 Rails
+    handle {
+        reverse_proxy rails:3000
+    }
+}
