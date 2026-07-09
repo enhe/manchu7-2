@@ -58,5 +58,5 @@ gem "dotenv-rails", "~> 3.2"
 
 gem "bootsnap", "~> 1.24"
 
-gem "ruby-lsp", "~> 0.26.9", :group => :development, :require => false
+gem "ruby-lsp", "~> 0.26.10", :group => :development, :require => false
 gem "ruby-lsp-rails", "~> 0.4.8", :group => :development, :require => false
