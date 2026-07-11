@@ -5,7 +5,7 @@ FROM ruby:$RUBY_VERSION-slim AS base
 WORKDIR /rails
 
 ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
-ENV PATH=/usr/local/bundle/bin:$PATH
+#ENV PATH=/usr/local/bundle/bin:$PATH
 
 RUN printf '%s\n' \
     'Types: deb' \
@@ -27,24 +27,22 @@ RUN printf '%s\n' \
     git \
     libyaml-dev \
     python-is-python3 \
- && rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-ENV RAILS_ENV=production \
-    BUNDLE_DEPLOYMENT=1 \
-    BUNDLE_PATH=/usr/local/bundle \
-    BUNDLE_WITHOUT=development:test
 
-COPY --from=build /usr/local/bundle /usr/local/bundle
-COPY --from=build /rails /rails
 
-RUN test -x /usr/local/bundle/bin/rails || (echo "RAILS BINSTUB MISSING" && false)
+ENV BUNDLE_PATH=/rails/vendor/bundle \
+    BUNDLE_APP_CONFIG=/rails/.bundle \
+    RAILS_ENV=development
+
+
 
 # -------------------- build --------------------
 FROM base AS build
 
 ARG NODE_VERSION=20.19.0
 ARG YARN_VERSION=1.22.22
-ENV PATH=/usr/local/bin:/usr/local/node/bin:$PATH
+#ENV PATH=/usr/local/bin:/usr/local/node/bin:$PATH
 
 RUN curl -L --retry 5 --retry-delay 3 --connect-timeout 30 \
     https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz \
@@ -52,33 +50,32 @@ RUN curl -L --retry 5 --retry-delay 3 --connect-timeout 30 \
     && npm install -g yarn@${YARN_VERSION}
 
 COPY Gemfile Gemfile.lock ./
-RUN bundle install \
- && bundle binstubs --all \
- && rm -rf ~/.bundle "${BUNDLE_PATH}"/ruby/*/cache \
- && bundle exec bootsnap precompile --gemfile
+RUN bundle install
+RUN bundle binstubs --all 
+      
 
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
+#COPY  /usr/local/bundle /usr/local/bundle
+#COPY --from=build /rails /rails
+#RUN test -x /usr/local/bundle/bin/rails || (echo "RAILS BINSTUB MISSING" && false)
 
 COPY . .
 RUN bundle exec bootsnap precompile app/ lib/
 
-RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile \
-    && rm -rf node_modules
+RUN SECRET_KEY_BASE=dummy \
+    RAILS_ENV=production \
+    bundle exec rails assets:precompile && \
+    rm -rf tmp/cache && \
+    rm -rf node_modules
+
 
 # -------------------- final --------------------
 FROM base
-ENV PATH=/usr/local/bundle/bin:$PATH
+#ENV PATH=/usr/local/bundle/bin:$PATH
 COPY --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
-COPY --from=build /rails /rails
+#COPY --from=build /rails /rails
 
-
-#COPY --from=build /rails/public/assets /rails/public/assets
-#COPY --from=build /rails/app /rails/app
-#COPY --from=build /rails/config /rails/config
-#COPY --from=build /rails/log /rails/log
-#COPY --from=build /rails/tmp /rails/tmp
-COPY --from=build /rails/bin/docker-entrypoint /rails/bin/docker-entrypoint
 
 
 

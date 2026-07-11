@@ -1,0 +1,62 @@
+FROM ruby:3.3.6-bookworm
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+# 系统依赖
+RUN printf '%s\n' \
+    'Types: deb' \
+    "URIs: ${APT_MIRROR}/debian" \
+    'Suites: bookworm bookworm-updates' \
+    'Components: main' \
+    '' \
+    'Types: deb' \
+    "URIs: ${APT_MIRROR}/debian-security" \
+    'Suites: bookworm-security' \
+    'Components: main' \
+    > /etc/apt/sources.list.d/debian.sources \
+    && apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        patch \
+        curl \
+        libpq-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        zlib1g-dev \
+        nodejs \
+        yarn \
+    && rm -rf /var/lib/apt/lists/*
+
+# ✅ 强制 gems + bundler config 进 mount directory
+ENV BUNDLE_PATH=/rails/vendor/bundle \
+    BUNDLE_APP_CONFIG=/rails/.bundle \
+    RAILS_ENV=production \
+    NODE_ENV=production
+
+WORKDIR /rails
+
+COPY package.json yarn.lock ./
+#RUN yarn config set registry https://registry.npmmirror.com \
+   # && yarn install --frozen-lockfile=false --ignore-scripts
+
+
+# 只 Gemfile/lock 先（so layer caches well)
+COPY Gemfile Gemfile.lock ./
+RUN bundle install --jobs 4 --retry 3
+
+     
+
+# 不 bundle install at build time
+# (container runtime will do it)
+
+# 前端 deps declaration
+
+COPY . .
+#RUN bundle exec rails assets:precompile  
+    #\&& yarn install --production --frozen-lockfile=false
+# entrypoint
+COPY bin/docker-entrypoint /usr/bin/docker-entrypoint.sh
+# COPY docker-entrypoint.sh /usr/bin/
+RUN chmod +x /usr/bin/docker-entrypoint.sh
+
+EXPOSE 3000
+ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
+CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "3000"]

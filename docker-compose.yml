@@ -8,7 +8,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./caddy2.8/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy2.8/Caddyfile.dev:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -30,26 +30,71 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
     networks:
       - manchu_network7
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo              # ← 必须和 services 下 mongo 服务名一致
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}        # MongoDB root 用户名
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}    # MongoDB root 密码
+      ME_CONFIG_BASICAUTH_USERNAME: meadmin         # mongo-express Web 登录账号(可选)
+      ME_CONFIG_BASICAUTH_PASSWORD: mepass          # mongo-express Web 登录密码(可选)
+    depends_on:
+      mongo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z mongo 27017 || exit 1"]
+      interval: 28s
+      timeout: 9s
+      retries: 3  
+    networks:
+      - manchu_network7
 
   valkey:
     image: valkey/valkey:9.0
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --appendonly yes
     container_name: manchu7_valkey
     restart: always
     ports:
       - "6379:6379"
     networks:
       - manchu_network7
-
+  valkey-admin:
+    image: valkey/valkey-admin:latest
+    container_name: valkey-admin
+    ports:
+      - "8080:8080"
+    environment:
+      - VALKEY_HOST=valkey   # 容器内用服务名访问
+      - VALKEY_PORT=6379
+      - VALKEY_CLUSTER_MODE=false
+    healthcheck:
+       test: ["CMD-SHELL", "nc -z valkey 6379 || exit 1"]
+       interval: 26s
+       timeout: 4s
+       retries: 3
+    depends_on:
+      valkey:
+        condition: service_healthy
+    networks:
+      - manchu_network7
   rustfs:
-    image: rustfs/rustfs:latest
     container_name: manchu7_rustfs
+    image: rustfs/rustfs:latest
     restart: unless-stopped
     ports:
-      - "9000:9000"   # S3 API
+      - "9000:9000"   # S3 API1.0.0-beta.8
       - "9001:9001"   # Web Console
     volumes:
-      - ./data:/data        # 数据持久化，可改为 /mnt/rustfs/data:/data
-      - ./logs:/var/log/rustfs
+      - rustfs_data:/data
+      - rustfs_logs:/logs
     environment:
       - TZ=Asia/Shanghai
       - RUSTFS_ADDRESS=0.0.0.0:9000
@@ -57,11 +102,11 @@ services:
       - RUSTFS_CONSOLE_ENABLE=true
       - RUSTFS_VOLUMES=/data
       - RUSTFS_ACCESS_KEY=rustfsadmin      # ⚠️ 生产环境请改强密码
-      - RUSTFS_SECRET_KEY=rustfsadmin123!  # ⚠️ 生产环境请改强密码
+      - RUSTFS_SECRET_KEY=rustfsadmin123!  # ⚠️ 生产环境请改强密码nc -z localhost 9000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "nc -z  rustfs 9000 || exit 1"]
+      interval: 31s
+      timeout: 7s
       retries: 3
     networks:
       - manchu_network7
@@ -69,20 +114,23 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.rails7
+      dockerfile: Dockerfile.rails7production
     container_name: manchu7_web
-    volumes:
-      - .:/app
+    # volumes:
+      #- .:/rails
     ports:
       - "3000:3000"
     depends_on:
       - mongo
-      - valkey
+      #- valkey
     env_file:
       - .env
     environment:
       RAILS_ENV: ${RAILS_ENV:-development}
-    command: ["rails", "server", "-b", "0.0.0.0"]
+      #RAILS_ENV: production
+      #SECRET_KEY_BASE: dummy
+
+    command: ["bundle", "exec", "rails", "server"]
     networks:
       - manchu_network7
 
@@ -90,8 +138,8 @@ volumes:
   mongo_data:
   caddy_data:
   caddy_config:
-  data:       # 数据持久化，可改为 /mnt/rustfs/data:/data
-  logs:
+  rustfs_data:
+  rustfs_logs:
 
 
 networks:

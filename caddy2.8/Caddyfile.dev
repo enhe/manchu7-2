@@ -1,0 +1,20 @@
+{
+    auto_https off
+}
+
+:80 {
+    reverse_proxy manchu7_web:3000 {
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 30s
+        }
+
+        # ✅ Rails 官方健康端点
+        health_uri /up
+        health_status 2xx
+        health_timeout 5s
+
+        fail_duration 10s
+
+    }
+}

@@ -1,0 +1,68 @@
+FROM ruby:3.3.9-bookworm
+
+# 方案C：用 slim 变体
+#FROM ruby:3.3-slim-bookworm
+#FROM ruby:3.3.6-bookworm
+
+# 国内 Debian 镜像
+RUN rm -f /etc/apt/sources.list.d/*.sources \
+    && echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm main" > /etc/apt/sources.list \
+    && echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm-updates main" >> /etc/apt/sources.list \
+    && echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main" >> /etc/apt/sources.list
+
+# 系统依赖
+RUN apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        patch \
+        curl \
+        libpq-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        zlib1g-dev \
+        #nodejs \
+        #yarn \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+ARG NODE_VERSION=20.19.0
+ARG YARN_VERSION=1.22.22
+
+
+RUN curl -L --retry 5 --retry-delay 3 --connect-timeout 30 \
+    https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz \
+    | tar xz -C /usr/local --strip-components=1 \
+    && npm install -g yarn@${YARN_VERSION}
+
+# Bundler / Rails env
+ENV BUNDLE_PATH=/rails/vendor/bundle \
+    BUNDLE_APP_CONFIG=/rails/.bundle \
+    #RAILS_ENV=production \
+    #NODE_ENV=production \
+    YARN_DISABLE_ENGINES_CHECK=1
+
+WORKDIR /rails
+
+# Ruby gems
+COPY Gemfile Gemfile.lock ./
+RUN bundle install --jobs 4 --retry 3
+
+# Frontend deps (NO frozen lockfile, NO postinstall)
+COPY package.json ./
+RUN yarn config set registry https://registry.npmmirror.com \
+    && yarn install --ignore-scripts --no-lockfile
+
+# 拷贝全部代码
+COPY . .
+
+# 预编译 assets（Rails 产线必须）
+RUN bundle exec rails assets:precompile
+
+# 入口点
+COPY bin/docker-entrypoint /usr/bin/docker-entrypoint.sh
+RUN chmod +x /usr/bin/docker-entrypoint.sh
+
+EXPOSE 3000
+ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
+CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "3000"]
